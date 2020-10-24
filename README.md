@@ -3,6 +3,6 @@
 
 ![RuneJS](https://i.imgur.com/osF9OSD.png)
 
-# RuneJS Update Server
+# RuneJS Login Server
 
 @TODO
