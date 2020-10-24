@@ -238,8 +238,9 @@ class LoginServer {
 
 }
 
-export const launchLoginServer = (host?: string, port?: number) => {
-    const loginServer = new LoginServer(host, port);
+export const launchLoginServer = (host?: string, port?: number, rsaMod?: string, rsaExp?: string,
+                                  checkCredentials?: boolean, playerSavePath?: string) => {
+    const loginServer = new LoginServer(host, port, rsaMod, rsaExp, checkCredentials, playerSavePath);
     openServer<LoginServerConnection>('Login Server', loginServer.serverConfig.loginServerHost,
         loginServer.serverConfig.loginServerPort,
         socket => new LoginServerConnection(loginServer, socket));
