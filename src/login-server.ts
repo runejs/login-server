@@ -1,9 +1,12 @@
+import { logger } from '@runejs/core';
+import { ByteBuffer } from '@runejs/core/buffer';
+import { openServer, SocketConnectionHandler, parseServerConfig } from '@runejs/core/net';
 import { Socket } from 'net';
 import BigInteger from 'bigi';
 import * as bcrypt from 'bcrypt';
-import { openServer, SocketConnectionHandler, parseServerConfig, ByteBuffer, logger } from '@runejs/core';
 import { longToString } from './util';
 import { loadPlayerSave } from './saves';
+
 
 interface ServerConfig {
     loginServerHost: string;
@@ -70,56 +73,56 @@ class LoginServerConnection extends SocketConnectionHandler {
     }
 
     private authenticate(buffer: ByteBuffer): void {
-        const loginType = buffer.get('BYTE', 'UNSIGNED');
+        const loginType = buffer.get('byte', 'u');
 
         if(loginType !== 16 && loginType !== 18) {
             throw new Error('Invalid login type ' + loginType);
         }
 
-        let loginEncryptedSize = buffer.get('BYTE', 'UNSIGNED') - (36 + 1 + 1 + 2);
+        let loginEncryptedSize = buffer.get('byte', 'u') - (36 + 1 + 1 + 2);
 
         if(loginEncryptedSize <= 0) {
             throw new Error('Invalid login packet length ' + loginEncryptedSize);
         }
 
-        const gameVersion = buffer.get('INT');
+        const gameVersion = buffer.get('int');
 
         if(gameVersion !== 435) {
             throw new Error('Invalid game version ' + gameVersion);
         }
 
-        const isLowDetail: boolean = buffer.get('BYTE') === 1;
+        const isLowDetail: boolean = buffer.get('byte') === 1;
 
         for(let i = 0; i < 13; i++) {
-            buffer.get('INT'); // Cache indices
+            buffer.get('int'); // Cache indices
             // @TODO validate these against the cache !!!
         }
 
         loginEncryptedSize--;
 
-        const rsaBytes = buffer.get('BYTE', 'UNSIGNED');
+        const rsaBytes = buffer.get('byte', 'u');
 
         const encryptedBytes: Buffer = Buffer.alloc(rsaBytes);
         buffer.copy(encryptedBytes, 0, buffer.readerIndex);
         const decrypted = new ByteBuffer(BigInteger.fromBuffer(encryptedBytes)
             .modPow(this.rsaExponent, this.rsaModulus).toBuffer());
 
-        const blockId = decrypted.get('BYTE');
+        const blockId = decrypted.get('byte');
 
         if(blockId !== 10) {
             throw new Error('Invalid block id ' + blockId);
         }
 
-        const clientKey1 = decrypted.get('INT');
-        const clientKey2 = decrypted.get('INT');
-        const incomingServerKey = BigInt(decrypted.get('LONG'));
+        const clientKey1 = decrypted.get('int');
+        const clientKey2 = decrypted.get('int');
+        const incomingServerKey = BigInt(decrypted.get('long'));
 
         if(this.serverKey !== incomingServerKey) {
             throw new Error(`Server key mismatch - ${this.serverKey} !== ${incomingServerKey}`);
         }
 
-        const gameClientId = decrypted.get('INT');
-        const usernameLong = BigInt(decrypted.get('LONG'));
+        const gameClientId = decrypted.get('int');
+        const usernameLong = BigInt(decrypted.get('long'));
         const username = longToString(usernameLong);
         const password = decrypted.getString();
 
@@ -145,9 +148,9 @@ class LoginServerConnection extends SocketConnectionHandler {
     private sendLogin(clientKeys: [ number, number ], gameClientId: number, username: string, password: string, isLowDetail: boolean): void {
         const outputBuffer = new ByteBuffer(400);
         outputBuffer.put(LoginResponseCode.SUCCESS);
-        outputBuffer.put(clientKeys[0], 'INT');
-        outputBuffer.put(clientKeys[1], 'INT');
-        outputBuffer.put(gameClientId, 'INT');
+        outputBuffer.put(clientKeys[0], 'int');
+        outputBuffer.put(clientKeys[1], 'int');
+        outputBuffer.put(gameClientId, 'int');
         outputBuffer.putString(username);
         outputBuffer.putString(bcrypt.hashSync(password, bcrypt.genSaltSync()));
         outputBuffer.put(isLowDetail ? 1 : 0);
@@ -160,7 +163,7 @@ class LoginServerConnection extends SocketConnectionHandler {
      */
     private sendLoginResponse(responseCode: number): void {
         const outputBuffer = new ByteBuffer(1);
-        outputBuffer.put(responseCode, 'BYTE');
+        outputBuffer.put(responseCode, 'byte');
         this.gameServerSocket.write(outputBuffer);
     }
 
@@ -203,13 +206,13 @@ class LoginServerConnection extends SocketConnectionHandler {
     }
 
     private handleLoginHandshake(buffer: ByteBuffer): void {
-        buffer.get('BYTE', 'UNSIGNED'); // Name hash
+        buffer.get('byte', 'u'); // Name hash
 
         this.serverKey = BigInt(Math.floor(Math.random() * 999999));
 
         const outputBuffer = new ByteBuffer(9);
-        outputBuffer.put(0, 'BYTE'); // Initial server login response -> 0 for OK
-        outputBuffer.put(this.serverKey, 'LONG');
+        outputBuffer.put(0, 'byte'); // Initial server login response -> 0 for OK
+        outputBuffer.put(this.serverKey, 'long');
         this.gameServerSocket.write(outputBuffer);
 
         this.connectionStage = ConnectionStage.ACTIVE;
