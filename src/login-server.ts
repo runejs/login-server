@@ -1,6 +1,6 @@
 import { logger } from '@runejs/core';
 import { ByteBuffer } from '@runejs/core/buffer';
-import { openServer, SocketConnectionHandler, parseServerConfig } from '@runejs/core/net';
+import { parseServerConfig, SocketServer } from '@runejs/core/net';
 import { Socket } from 'net';
 import BigInteger from 'bigi';
 import * as bcrypt from 'bcrypt';
@@ -39,7 +39,7 @@ export enum LoginResponseCode {
     // @TODO the rest
 }
 
-class LoginServerConnection extends SocketConnectionHandler {
+class LoginServerConnection extends SocketServer {
 
     private readonly rsaModulus = BigInteger(this.loginServer.serverConfig.rsaMod);
     private readonly rsaExponent = BigInteger(this.loginServer.serverConfig.rsaExp);
@@ -47,32 +47,28 @@ class LoginServerConnection extends SocketConnectionHandler {
     private serverKey: bigint;
 
     public constructor(private readonly loginServer: LoginServer,
-                       private readonly gameServerSocket: Socket) {
-        super();
+                       gameServerSocket: Socket) {
+        super(gameServerSocket);
     }
 
-    public async dataReceived(buffer: ByteBuffer): Promise<void> {
-        if(!buffer) {
-            logger.info('No data supplied in message to login server.');
-            return;
-        }
+    public initialHandshake(buffer: ByteBuffer): boolean {
+        buffer.get('byte', 'u'); // Name hash
 
-        switch(this.connectionStage) {
-            case ConnectionStage.HANDSHAKE:
-                this.handleLoginHandshake(buffer);
-                break;
-            default:
-                this.authenticate(buffer);
-                break;
-        }
+        this.serverKey = BigInt(Math.floor(Math.random() * 999999));
 
-        return Promise.resolve();
+        // @TODO error cases
+
+        const outputBuffer = new ByteBuffer(9);
+        outputBuffer.put(0, 'byte'); // Initial server login response -> 0 for OK
+        outputBuffer.put(this.serverKey, 'long');
+        this.socket.write(outputBuffer);
+
+        this.connectionStage = ConnectionStage.ACTIVE;
+
+        return true;
     }
 
-    public connectionDestroyed(): void {
-    }
-
-    private authenticate(buffer: ByteBuffer): void {
+    public decodeMessage(buffer: ByteBuffer): void {
         const loginType = buffer.get('byte', 'u');
 
         if(loginType !== 16 && loginType !== 18) {
@@ -95,7 +91,7 @@ class LoginServerConnection extends SocketConnectionHandler {
 
         for(let i = 0; i < 13; i++) {
             buffer.get('int'); // Cache indices
-            // @TODO validate these against the cache !!!
+            // @TODO validate these against the filestore
         }
 
         loginEncryptedSize--;
@@ -137,6 +133,9 @@ class LoginServerConnection extends SocketConnectionHandler {
         }
     }
 
+    public connectionDestroyed(): void {
+    }
+
     /**
      * Logs a user in and notifies their game server of a successful login.
      * @param clientKeys The user's client keys (sent by the client).
@@ -154,7 +153,7 @@ class LoginServerConnection extends SocketConnectionHandler {
         outputBuffer.putString(username);
         outputBuffer.putString(bcrypt.hashSync(password, bcrypt.genSaltSync()));
         outputBuffer.put(isLowDetail ? 1 : 0);
-        this.gameServerSocket.write(outputBuffer.getSlice(0, outputBuffer.writerIndex));
+        this.socket.write(outputBuffer.getSlice(0, outputBuffer.writerIndex));
     }
 
     /**
@@ -164,7 +163,7 @@ class LoginServerConnection extends SocketConnectionHandler {
     private sendLoginResponse(responseCode: number): void {
         const outputBuffer = new ByteBuffer(1);
         outputBuffer.put(responseCode, 'byte');
-        this.gameServerSocket.write(outputBuffer);
+        this.socket.write(outputBuffer);
     }
 
     /**
@@ -205,46 +204,24 @@ class LoginServerConnection extends SocketConnectionHandler {
         return -1;
     }
 
-    private handleLoginHandshake(buffer: ByteBuffer): void {
-        buffer.get('byte', 'u'); // Name hash
-
-        this.serverKey = BigInt(Math.floor(Math.random() * 999999));
-
-        const outputBuffer = new ByteBuffer(9);
-        outputBuffer.put(0, 'byte'); // Initial server login response -> 0 for OK
-        outputBuffer.put(this.serverKey, 'long');
-        this.gameServerSocket.write(outputBuffer);
-
-        this.connectionStage = ConnectionStage.ACTIVE;
-    }
-
 }
+
 
 class LoginServer {
 
     public readonly serverConfig: ServerConfig;
 
-    public constructor(host?: string, port?: number, rsaMod?: string, rsaExp?: string,
-                       checkCredentials?: boolean, playerSavePath?: string) {
-        if(!host) {
-            this.serverConfig = parseServerConfig<ServerConfig>();
-        } else {
-            this.serverConfig = {
-                loginServerHost: host,
-                loginServerPort: port,
-                rsaMod, rsaExp,
-                checkCredentials,
-                playerSavePath
-            };
-        }
+    public constructor(configDir?: string) {
+        this.serverConfig = parseServerConfig<ServerConfig>({ configDir });
     }
 
 }
 
-export const launchLoginServer = (host?: string, port?: number, rsaMod?: string, rsaExp?: string,
-                                  checkCredentials?: boolean, playerSavePath?: string) => {
-    const loginServer = new LoginServer(host, port, rsaMod, rsaExp, checkCredentials, playerSavePath);
-    openServer<LoginServerConnection>('Login Server', loginServer.serverConfig.loginServerHost,
-        loginServer.serverConfig.loginServerPort,
+
+export const launchLoginServer = (configDir?: string) => {
+    const loginServer = new LoginServer(configDir);
+    const { loginServerHost, loginServerPort } = loginServer.serverConfig;
+    SocketServer.launch<LoginServerConnection>('Login Server',
+        loginServerHost, loginServerPort,
         socket => new LoginServerConnection(loginServer, socket));
 };
