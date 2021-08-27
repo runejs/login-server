@@ -5,4 +5,4 @@
 
 # RuneJS Login Server
 
-A game login server for RuneScape written in TypeScript. Packaged into rune-js/server automatically.
+A game login server for RuneScape written in TypeScript. Packaged into runejs/server automatically.
