@@ -1,6 +1,6 @@
 {
     "name": "@runejs/login-server",
-    "version": "1.2.0",
+    "version": "1.2.2",
     "description": "RuneJS Game Login Server",
     "main": "lib/index.js",
     "types": "lib/index.d.ts",
@@ -22,7 +22,7 @@
     "author": "Tynarus",
     "license": "GPL-3.0",
     "dependencies": {
-        "@runejs/core": "^1.5.1",
+        "@runejs/core": "^1.5.4",
         "bcrypt": "^5.0.1",
         "bigi": "^1.4.2",
         "source-map-support": "^0.5.19",
