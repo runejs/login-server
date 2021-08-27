@@ -1,6 +1,6 @@
 {
     "name": "@runejs/login-server",
-    "version": "1.2.0-rc.0",
+    "version": "1.2.0",
     "description": "RuneJS Game Login Server",
     "main": "lib/index.js",
     "types": "lib/index.d.ts",
