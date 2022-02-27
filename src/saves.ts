@@ -1,6 +1,7 @@
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
-import { logger } from '@runejs/core';
+import { logger } from '@runejs/common';
+
 
 interface PlayerSave {
     username: string;

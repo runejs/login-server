@@ -9,7 +9,7 @@ export function longToString(nameLong: BigInt): string {
     let ac: string = '';
     while(nameLong !== BigInt(0)) {
         const l1 = nameLong;
-        nameLong = BigInt(nameLong) / BigInt(37);
+        nameLong = BigInt(nameLong as any) / BigInt(37);
         ac += VALID_CHARS[parseInt(l1.toString()) - parseInt(nameLong.toString()) * 37];
     }
 

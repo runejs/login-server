@@ -1,6 +1,6 @@
 {
     "name": "@runejs/login-server",
-    "version": "1.2.2",
+    "version": "2.0.0-beta.0",
     "description": "RuneJS Game Login Server",
     "main": "lib/index.js",
     "types": "lib/index.d.ts",
@@ -19,10 +19,10 @@
         "url": "https://github.com/runejs/login-server/issues"
     },
     "homepage": "https://github.com/runejs/login-server#readme",
-    "author": "Tynarus",
+    "author": "Kikorono",
     "license": "GPL-3.0",
     "dependencies": {
-        "@runejs/core": "^1.5.4",
+        "@runejs/common": "^2.0.0-rc.14",
         "bcrypt": "^5.0.1",
         "bigi": "^1.4.2",
         "source-map-support": "^0.5.19",
