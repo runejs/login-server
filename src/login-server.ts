@@ -1,5 +1,4 @@
-import { logger } from '@runejs/common';
-import { ByteBuffer } from '@runejs/common/buffer';
+import { logger, ByteBuffer } from '@runejs/common';
 import { parseServerConfig, SocketServer } from '@runejs/common/net';
 import { Socket } from 'net';
 import BigInteger from 'bigi';
