@@ -1,10 +1,10 @@
 import { logger, ByteBuffer } from '@runejs/common';
 import { parseServerConfig, SocketServer } from '@runejs/common/net';
-import { Socket } from 'net';
+import type { Socket } from 'node:net';
 
 import { longToString } from './util';
 import { loadPlayerSave } from './saves';
-import { randomBytes, scryptSync } from 'crypto';
+import { randomBytes, scryptSync } from 'node:crypto';
 
 
 interface ServerConfig {
@@ -100,19 +100,19 @@ class LoginServerConnection extends SocketServer {
         const loginType = buffer.get('byte', 'u');
 
         if(loginType !== 16 && loginType !== 18) {
-            throw new Error('Invalid login type ' + loginType);
+            throw new Error(`Invalid login type ${loginType}`);
         }
 
         let loginEncryptedSize = buffer.get('byte', 'u') - (36 + 1 + 1 + 2);
 
         if(loginEncryptedSize <= 0) {
-            throw new Error('Invalid login packet length ' + loginEncryptedSize);
+            throw new Error(`Invalid login packet length ${loginEncryptedSize}`);
         }
 
         const gameVersion = buffer.get('int');
 
         if(gameVersion !== 435) {
-            throw new Error('Invalid game version ' + gameVersion);
+            throw new Error(`Invalid game version ${gameVersion}`);
         }
 
         const isLowDetail: boolean = buffer.get('byte') === 1;
@@ -134,7 +134,7 @@ class LoginServerConnection extends SocketServer {
         const blockId = decrypted.get('byte');
 
         if(blockId !== 10) {
-            throw new Error('Invalid block id ' + blockId);
+            throw new Error(`Invalid block id ${blockId}`);
         }
 
         const clientKey1 = decrypted.get('int');
@@ -204,17 +204,17 @@ class LoginServerConnection extends SocketServer {
      * @param username The incoming user's username input.
      * @param password The incoming user's password input.
      */
-    private checkCredentials(username: string, password: string): number {
+    private checkCredentials(inputUsername: string, inputPassword: string): number {
         if(!this.loginServer.serverConfig.checkCredentials) {
             return -1;
         }
 
-        if(!username || !password) {
+        if(!inputUsername || !inputPassword) {
             return LoginResponseCode.INVALID_CREDENTIALS;
         }
 
-        username = username.trim().toLowerCase();
-        password = password.trim();
+        const username = inputUsername.trim().toLowerCase();
+        const password = inputPassword.trim();
 
         if(username === '' || password === '') {
             return LoginResponseCode.INVALID_CREDENTIALS;
@@ -231,8 +231,7 @@ class LoginServerConnection extends SocketServer {
                     return LoginResponseCode.INVALID_CREDENTIALS;
                 }
             } else if(this.loginServer.serverConfig.checkCredentials) {
-                logger.warn(`User ${ username } has no password hash saved - ` +
-                    `their password will now be saved.`);
+                logger.warn(`User ${ username } has no password hash saved - their password will now be saved.`);
             }
         }
 

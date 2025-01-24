@@ -5,12 +5,13 @@ const VALID_CHARS = ['_', 'a', 'b', 'c', 'd',
     '*', '(', ')', '-', '+', '=', ':', ';', '.', '>', '<', ',', '"',
     '[', ']', '|', '?', '/', '`'];
 
-export function longToString(nameLong: BigInt): string {
-    let ac: string = '';
+export function longToString(input: bigint): string {
+    let ac = '';
+    let nameLong = input;
     while(nameLong !== BigInt(0)) {
         const l1 = nameLong;
-        nameLong = BigInt(nameLong as any) / BigInt(37);
-        ac += VALID_CHARS[parseInt(l1.toString()) - parseInt(nameLong.toString()) * 37];
+        nameLong = BigInt(nameLong) / BigInt(37);
+        ac += VALID_CHARS[Number.parseInt(l1.toString()) - Number.parseInt(nameLong.toString()) * 37];
     }
 
     return ac.split('').reverse().join('');

@@ -1,5 +1,5 @@
-import { join } from 'path';
-import { existsSync, readFileSync } from 'fs';
+import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { logger } from '@runejs/common';
 
 
@@ -9,7 +9,7 @@ interface PlayerSave {
 }
 
 export function loadPlayerSave(playerSaveDir: string, username: string): PlayerSave {
-    const fileName = username.toLowerCase() + '.json';
+    const fileName = `${username.toLowerCase()}.json`;
     const filePath = join(playerSaveDir, fileName);
 
     if(!existsSync(filePath)) {
