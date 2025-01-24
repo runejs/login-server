@@ -6,7 +6,6 @@ import { longToString } from './util';
 import { loadPlayerSave } from './saves';
 import { randomBytes, scryptSync } from 'node:crypto';
 
-
 interface ServerConfig {
     loginServerHost: string;
     loginServerPort: number;
@@ -18,7 +17,7 @@ interface ServerConfig {
 
 enum ConnectionStage {
     HANDSHAKE = 'handshake',
-    ACTIVE = 'active'
+    ACTIVE = 'active',
 }
 
 /**
@@ -34,19 +33,20 @@ export enum LoginResponseCode {
     WORLD_FULL = 7,
     LOGIN_SERVER_OFFLINE = 8,
     LOGIN_LIMIT_EXCEEDED = 9,
-    BAD_SESSION_ID = 10
+    BAD_SESSION_ID = 10,
     // @TODO the rest
 }
 
 class LoginServerConnection extends SocketServer {
-
     private readonly rsaModulus: bigint;
     private readonly rsaExponent: bigint;
     private connectionStage: ConnectionStage = ConnectionStage.HANDSHAKE;
     private serverKey: bigint;
 
-    public constructor(private readonly loginServer: LoginServer,
-                       gameServerSocket: Socket) {
+    public constructor(
+        private readonly loginServer: LoginServer,
+        gameServerSocket: Socket,
+    ) {
         super(gameServerSocket);
 
         this.rsaModulus = BigInt(this.loginServer.serverConfig.rsaMod);
@@ -70,19 +70,22 @@ class LoginServerConnection extends SocketServer {
         return true;
     }
 
-    private getDecryptedByteBufferFromEncryptedBuffer(buffer: Buffer): ByteBuffer {
+    private getDecryptedByteBufferFromEncryptedBuffer(
+        buffer: Buffer,
+    ): ByteBuffer {
         // Helper function to perform modular exponentiation without exceeding the maximum BigInt size.
         function modPow(base: bigint, exponent: bigint, modulus: bigint) {
             if (modulus === 1n) {
                 return 0n;
             }
-            
+
             let result = 1n;
             let nextBase = base % modulus;
             let nextExp = exponent;
 
             while (nextExp > 0n) {
-                if (nextExp % 2n === 1n) { // If exponent is odd
+                if (nextExp % 2n === 1n) {
+                    // If exponent is odd
                     result = (result * nextBase) % modulus;
                 }
                 nextExp = nextExp >> 1n; // Divide exponent by 2
@@ -92,32 +95,43 @@ class LoginServerConnection extends SocketServer {
             return result;
         }
 
-        const decryptedHex = modPow(BigInt(`0x${buffer.toString('hex')}`), this.rsaExponent, this.rsaModulus).toString(16);
-        return new ByteBuffer(Buffer.from(decryptedHex.length % 2 ? `0${decryptedHex}` : decryptedHex, 'hex'));
+        const decryptedHex = modPow(
+            BigInt(`0x${buffer.toString('hex')}`),
+            this.rsaExponent,
+            this.rsaModulus,
+        ).toString(16);
+        return new ByteBuffer(
+            Buffer.from(
+                decryptedHex.length % 2 ? `0${decryptedHex}` : decryptedHex,
+                'hex',
+            ),
+        );
     }
 
     public decodeMessage(buffer: ByteBuffer): void {
         const loginType = buffer.get('byte', 'u');
 
-        if(loginType !== 16 && loginType !== 18) {
+        if (loginType !== 16 && loginType !== 18) {
             throw new Error(`Invalid login type ${loginType}`);
         }
 
         let loginEncryptedSize = buffer.get('byte', 'u') - (36 + 1 + 1 + 2);
 
-        if(loginEncryptedSize <= 0) {
-            throw new Error(`Invalid login packet length ${loginEncryptedSize}`);
+        if (loginEncryptedSize <= 0) {
+            throw new Error(
+                `Invalid login packet length ${loginEncryptedSize}`,
+            );
         }
 
         const gameVersion = buffer.get('int');
 
-        if(gameVersion !== 435) {
+        if (gameVersion !== 435) {
             throw new Error(`Invalid game version ${gameVersion}`);
         }
 
         const isLowDetail: boolean = buffer.get('byte') === 1;
 
-        for(let i = 0; i < 13; i++) {
+        for (let i = 0; i < 13; i++) {
             buffer.get('int'); // Cache indices
             // @TODO validate these against the filestore
         }
@@ -128,12 +142,13 @@ class LoginServerConnection extends SocketServer {
 
         const encryptedBytes: Buffer = Buffer.alloc(rsaBytes);
         buffer.copy(encryptedBytes, 0, buffer.readerIndex);
-        
-        const decrypted = this.getDecryptedByteBufferFromEncryptedBuffer(encryptedBytes);
+
+        const decrypted =
+            this.getDecryptedByteBufferFromEncryptedBuffer(encryptedBytes);
 
         const blockId = decrypted.get('byte');
 
-        if(blockId !== 10) {
+        if (blockId !== 10) {
             throw new Error(`Invalid block id ${blockId}`);
         }
 
@@ -141,8 +156,10 @@ class LoginServerConnection extends SocketServer {
         const clientKey2 = decrypted.get('int');
         const incomingServerKey = BigInt(decrypted.get('long'));
 
-        if(this.serverKey !== incomingServerKey) {
-            throw new Error(`Server key mismatch - ${this.serverKey} !== ${incomingServerKey}`);
+        if (this.serverKey !== incomingServerKey) {
+            throw new Error(
+                `Server key mismatch - ${this.serverKey} !== ${incomingServerKey}`,
+            );
         }
 
         const gameClientId = decrypted.get('int');
@@ -152,17 +169,27 @@ class LoginServerConnection extends SocketServer {
 
         logger.info(`Login request: ${username}/${password}`);
 
-        const credentialsResponseCode = this.checkCredentials(username, password);
-        if(credentialsResponseCode === -1) {
-            this.sendLogin([ clientKey1, clientKey2 ], gameClientId, username, password, isLowDetail);
+        const credentialsResponseCode = this.checkCredentials(
+            username,
+            password,
+        );
+        if (credentialsResponseCode === -1) {
+            this.sendLogin(
+                [clientKey1, clientKey2],
+                gameClientId,
+                username,
+                password,
+                isLowDetail,
+            );
         } else {
-            logger.info(`${username} attempted to login but received error code ${ credentialsResponseCode }.`);
+            logger.info(
+                `${username} attempted to login but received error code ${credentialsResponseCode}.`,
+            );
             this.sendLoginResponse(credentialsResponseCode);
         }
     }
 
-    public connectionDestroyed(): void {
-    }
+    public connectionDestroyed(): void {}
 
     /**
      * Logs a user in and notifies their game server of a successful login.
@@ -172,7 +199,13 @@ class LoginServerConnection extends SocketServer {
      * @param password The user's password.
      * @param isLowDetail Whether or not the user selected the "Low Detail" option.
      */
-    private sendLogin(clientKeys: [ number, number ], gameClientId: number, username: string, password: string, isLowDetail: boolean): void {
+    private sendLogin(
+        clientKeys: [number, number],
+        gameClientId: number,
+        username: string,
+        password: string,
+        isLowDetail: boolean,
+    ): void {
         const outputBuffer = new ByteBuffer(400);
         outputBuffer.put(LoginResponseCode.SUCCESS);
         outputBuffer.put(clientKeys[0], 'int');
@@ -182,8 +215,10 @@ class LoginServerConnection extends SocketServer {
 
         const salt = randomBytes(16).toString('hex');
         // Append the salt to the end of the hashed password so it can be extracted when validating the password
-        outputBuffer.putString(scryptSync(password, salt, 32).toString('hex') + salt);
-        
+        outputBuffer.putString(
+            scryptSync(password, salt, 32).toString('hex') + salt,
+        );
+
         outputBuffer.put(isLowDetail ? 1 : 0);
         this.socket.write(outputBuffer.getSlice(0, outputBuffer.writerIndex));
     }
@@ -204,58 +239,68 @@ class LoginServerConnection extends SocketServer {
      * @param username The incoming user's username input.
      * @param password The incoming user's password input.
      */
-    private checkCredentials(inputUsername: string, inputPassword: string): number {
-        if(!this.loginServer.serverConfig.checkCredentials) {
+    private checkCredentials(
+        inputUsername: string,
+        inputPassword: string,
+    ): number {
+        if (!this.loginServer.serverConfig.checkCredentials) {
             return -1;
         }
 
-        if(!inputUsername || !inputPassword) {
+        if (!inputUsername || !inputPassword) {
             return LoginResponseCode.INVALID_CREDENTIALS;
         }
 
         const username = inputUsername.trim().toLowerCase();
         const password = inputPassword.trim();
 
-        if(username === '' || password === '') {
+        if (username === '' || password === '') {
             return LoginResponseCode.INVALID_CREDENTIALS;
         }
 
-        const playerSave = loadPlayerSave(this.loginServer.serverConfig.playerSavePath, username);
-        if(playerSave) {
+        const playerSave = loadPlayerSave(
+            this.loginServer.serverConfig.playerSavePath,
+            username,
+        );
+        if (playerSave) {
             const playerPasswordHash = playerSave.passwordHash;
-            if(playerPasswordHash) {
+            if (playerPasswordHash) {
                 // Everything after the first 64 characters is the salt
-                const currentPassHash = scryptSync(password, playerPasswordHash.slice(64), 32).toString('hex');
+                const currentPassHash = scryptSync(
+                    password,
+                    playerPasswordHash.slice(64),
+                    32,
+                ).toString('hex');
                 // Only compare to the actual hash (the first 64 characters)
-                if(playerPasswordHash.slice(0, 64) !== currentPassHash) {
+                if (playerPasswordHash.slice(0, 64) !== currentPassHash) {
                     return LoginResponseCode.INVALID_CREDENTIALS;
                 }
-            } else if(this.loginServer.serverConfig.checkCredentials) {
-                logger.warn(`User ${ username } has no password hash saved - their password will now be saved.`);
+            } else if (this.loginServer.serverConfig.checkCredentials) {
+                logger.warn(
+                    `User ${username} has no password hash saved - their password will now be saved.`,
+                );
             }
         }
 
         return -1;
     }
-
 }
 
-
 class LoginServer {
-
     public readonly serverConfig: ServerConfig;
 
     public constructor(configDir?: string) {
         this.serverConfig = parseServerConfig<ServerConfig>({ configDir });
     }
-
 }
-
 
 export const launchLoginServer = (configDir?: string) => {
     const loginServer = new LoginServer(configDir);
     const { loginServerHost, loginServerPort } = loginServer.serverConfig;
-    SocketServer.launch<LoginServerConnection>('Login Server',
-        loginServerHost, loginServerPort,
-        socket => new LoginServerConnection(loginServer, socket));
+    SocketServer.launch<LoginServerConnection>(
+        'Login Server',
+        loginServerHost,
+        loginServerPort,
+        (socket) => new LoginServerConnection(loginServer, socket),
+    );
 };
