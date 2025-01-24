@@ -1,11 +1,10 @@
 import { logger, ByteBuffer } from '@runejs/common';
 import { parseServerConfig, SocketServer } from '@runejs/common/net';
 import { Socket } from 'net';
-import BigInteger from 'bigi';
-import * as bcrypt from 'bcrypt';
 
 import { longToString } from './util';
 import { loadPlayerSave } from './saves';
+import { randomBytes, scryptSync } from 'crypto';
 
 
 interface ServerConfig {
@@ -41,14 +40,17 @@ export enum LoginResponseCode {
 
 class LoginServerConnection extends SocketServer {
 
-    private readonly rsaModulus = BigInteger(this.loginServer.serverConfig.rsaMod);
-    private readonly rsaExponent = BigInteger(this.loginServer.serverConfig.rsaExp);
+    private readonly rsaModulus: bigint;
+    private readonly rsaExponent: bigint;
     private connectionStage: ConnectionStage = ConnectionStage.HANDSHAKE;
     private serverKey: bigint;
 
     public constructor(private readonly loginServer: LoginServer,
                        gameServerSocket: Socket) {
         super(gameServerSocket);
+
+        this.rsaModulus = BigInt(this.loginServer.serverConfig.rsaMod);
+        this.rsaExponent = BigInt(this.loginServer.serverConfig.rsaExp);
     }
 
     public initialHandshake(buffer: ByteBuffer): boolean {
@@ -66,6 +68,32 @@ class LoginServerConnection extends SocketServer {
         this.connectionStage = ConnectionStage.ACTIVE;
 
         return true;
+    }
+
+    private getDecryptedByteBufferFromEncryptedBuffer(buffer: Buffer): ByteBuffer {
+        // Helper function to perform modular exponentiation without exceeding the maximum BigInt size.
+        function modPow(base: bigint, exponent: bigint, modulus: bigint) {
+            if (modulus === 1n) {
+                return 0n;
+            }
+            
+            let result = 1n;
+            let nextBase = base % modulus;
+            let nextExp = exponent;
+
+            while (nextExp > 0n) {
+                if (nextExp % 2n === 1n) { // If exponent is odd
+                    result = (result * nextBase) % modulus;
+                }
+                nextExp = nextExp >> 1n; // Divide exponent by 2
+                nextBase = (nextBase * nextBase) % modulus;
+            }
+
+            return result;
+        }
+
+        const decryptedHex = modPow(BigInt(`0x${buffer.toString('hex')}`), this.rsaExponent, this.rsaModulus).toString(16);
+        return new ByteBuffer(Buffer.from(decryptedHex.length % 2 ? `0${decryptedHex}` : decryptedHex, 'hex'));
     }
 
     public decodeMessage(buffer: ByteBuffer): void {
@@ -100,8 +128,8 @@ class LoginServerConnection extends SocketServer {
 
         const encryptedBytes: Buffer = Buffer.alloc(rsaBytes);
         buffer.copy(encryptedBytes, 0, buffer.readerIndex);
-        const decrypted = new ByteBuffer(BigInteger.fromBuffer(encryptedBytes)
-            .modPow(this.rsaExponent, this.rsaModulus).toBuffer());
+        
+        const decrypted = this.getDecryptedByteBufferFromEncryptedBuffer(encryptedBytes);
 
         const blockId = decrypted.get('byte');
 
@@ -151,7 +179,11 @@ class LoginServerConnection extends SocketServer {
         outputBuffer.put(clientKeys[1], 'int');
         outputBuffer.put(gameClientId, 'int');
         outputBuffer.putString(username);
-        outputBuffer.putString(bcrypt.hashSync(password, bcrypt.genSaltSync()));
+
+        const salt = randomBytes(16).toString('hex');
+        // Append the salt to the end of the hashed password so it can be extracted when validating the password
+        outputBuffer.putString(scryptSync(password, salt, 32).toString('hex') + salt);
+        
         outputBuffer.put(isLowDetail ? 1 : 0);
         this.socket.write(outputBuffer.getSlice(0, outputBuffer.writerIndex));
     }
@@ -192,7 +224,10 @@ class LoginServerConnection extends SocketServer {
         if(playerSave) {
             const playerPasswordHash = playerSave.passwordHash;
             if(playerPasswordHash) {
-                if(!bcrypt.compareSync(password, playerPasswordHash)) {
+                // Everything after the first 64 characters is the salt
+                const currentPassHash = scryptSync(password, playerPasswordHash.slice(64), 32).toString('hex');
+                // Only compare to the actual hash (the first 64 characters)
+                if(playerPasswordHash.slice(0, 64) !== currentPassHash) {
                     return LoginResponseCode.INVALID_CREDENTIALS;
                 }
             } else if(this.loginServer.serverConfig.checkCredentials) {
