@@ -9,3 +9,4 @@ tslint.json
 /data/config
 server-config.yaml
 server-config.json
+biome.json
